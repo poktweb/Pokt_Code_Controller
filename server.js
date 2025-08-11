@@ -304,6 +304,74 @@ app.post('/api/consume-request', async (req, res) => {
     }
 });
 
+// Update user monthly limit
+app.put('/api/users/:id/limit', async (req, res) => {
+    const { id } = req.params;
+    const { monthly_limit, system_key } = req.body;
+
+    if (!monthly_limit || !system_key) {
+        return res.status(400).json({ error: 'Limite mensal e system key são obrigatórios' });
+    }
+
+    if (monthly_limit < 1) {
+        return res.status(400).json({ error: 'Limite mensal deve ser maior que 0' });
+    }
+
+    try {
+        // Verify system key
+        const client = await getClient();
+        const systemKeyResult = await client.query("SELECT key_value FROM system_config WHERE key_name = 'system_key'");
+        
+        if (systemKeyResult.rows.length === 0 || systemKeyResult.rows[0].key_value !== system_key) {
+            return res.status(401).json({ error: 'System key inválida' });
+        }
+
+        const result = await client.query("UPDATE users SET monthly_limit = $1 WHERE id = $2 RETURNING id", [monthly_limit, id]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Usuário não encontrado' });
+        }
+
+        res.json({ message: 'Limite mensal atualizado com sucesso', monthly_limit });
+        
+    } catch (err) {
+        console.error('Erro ao atualizar usuário:', err);
+        res.status(500).json({ error: 'Erro interno do servidor' });
+    }
+});
+
+// Delete user
+app.delete('/api/users/:id', async (req, res) => {
+    const { id } = req.params;
+    const { system_key } = req.body;
+
+    if (!system_key) {
+        return res.status(400).json({ error: 'System key é obrigatória' });
+    }
+
+    try {
+        // Verify system key
+        const client = await getClient();
+        const systemKeyResult = await client.query("SELECT key_value FROM system_config WHERE key_name = 'system_key'");
+        
+        if (systemKeyResult.rows.length === 0 || systemKeyResult.rows[0].key_value !== system_key) {
+            return res.status(401).json({ error: 'System key inválida' });
+        }
+
+        const result = await client.query("DELETE FROM users WHERE id = $1 RETURNING id", [id]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Usuário não encontrado' });
+        }
+
+        res.json({ message: 'Usuário deletado com sucesso' });
+        
+    } catch (err) {
+        console.error('Erro ao deletar usuário:', err);
+        res.status(500).json({ error: 'Erro interno do servidor' });
+    }
+});
+
 // Start server
 app.listen(PORT, async () => {
     console.log(`Servidor rodando na porta ${PORT}`);

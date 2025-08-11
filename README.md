@@ -7,6 +7,8 @@ Sistema simplificado de controle para validação de tokens e consumo de requisi
 - **Validar Token**: Verifica se o token do usuário é válido e retorna informações
 - **Consumir Requisição**: Desconta 1 requisição do limite mensal do usuário
 - **Painel Admin**: Interface para cadastrar usuários e monitorar uso
+- **Editar Usuários**: Modificar limite mensal de requisições
+- **Deletar Usuários**: Remover usuários do sistema
 
 ## 🌐 **Deploy no Vercel**
 
@@ -269,6 +271,8 @@ except Exception as e:
 | POST | `/api/validate-token` | **Validar token usuário** | ❌ |
 | POST | `/api/consume-request` | **Consumir requisição** | ❌ |
 | POST | `/api/users/register` | Cadastrar usuário | ✅ System Key |
+| PUT | `/api/users/:id/limit` | Atualizar limite mensal | ✅ System Key |
+| DELETE | `/api/users/:id` | Deletar usuário | ✅ System Key |
 
 ## 🏗️ **Tecnologias**
 
