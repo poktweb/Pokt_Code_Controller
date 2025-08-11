@@ -8,6 +8,36 @@ Sistema simplificado de controle para validação de tokens e consumo de requisi
 - **Consumir Requisição**: Desconta 1 requisição do limite mensal do usuário
 - **Painel Admin**: Interface para cadastrar usuários e monitorar uso
 
+## 🌐 **Deploy no Vercel**
+
+### **Configuração Automática:**
+O projeto já está configurado para funcionar no Vercel com:
+- ✅ **vercel.json** configurado
+- ✅ **Conexões PostgreSQL** otimizadas para serverless
+- ✅ **Timeout** configurado para 30 segundos
+
+### **Deploy:**
+1. **Instalar Vercel CLI:**
+   ```bash
+   npm i -g vercel
+   ```
+
+2. **Fazer deploy:**
+   ```bash
+   vercel
+   ```
+
+3. **Configurar variáveis de ambiente (opcional):**
+   ```bash
+   vercel env add DATABASE_URL
+   ```
+
+### **Por que funciona no Vercel agora:**
+- **Client ao invés de Pool**: Cada requisição cria uma nova conexão
+- **Conexões fechadas**: `client.end()` após cada operação
+- **Sem estado persistente**: Ideal para funções serverless
+- **SSL configurado**: Compatível com Neon PostgreSQL
+
 ## 🚀 **Instalação**
 
 1. **Instalar dependências:**

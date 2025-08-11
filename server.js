@@ -1,5 +1,5 @@
 const express = require('express');
-const { Pool } = require('pg');
+const { Client } = require('pg');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 
@@ -10,30 +10,40 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(express.static('public'));
 
-// PostgreSQL connection
-const pool = new Pool({
-    connectionString: 'postgresql://neondb_owner:npg_o4jREmlL7zpQ@ep-purple-flower-aejbb9ba-pooler.c-2.us-east-2.aws.neon.tech/Pokt_Code?sslmode=require&channel_binding=require',
-    ssl: {
-        rejectUnauthorized: false
-    }
-});
+// Database connection function
+async function getClient() {
+    const client = new Client({
+        connectionString: 'postgresql://neondb_owner:npg_o4jREmlL7zpQ@ep-purple-flower-aejbb9ba-pooler.c-2.us-east-2.aws.neon.tech/Pokt_Code?sslmode=require&channel_binding=require',
+        ssl: {
+            rejectUnauthorized: false
+        }
+    });
+    
+    await client.connect();
+    return client;
+}
 
 // Test database connection
-pool.query('SELECT NOW()', (err, res) => {
-    if (err) {
+async function testConnection() {
+    try {
+        const client = await getClient();
+        const result = await client.query('SELECT NOW()');
+        console.log('Conectado ao PostgreSQL:', result.rows[0].now);
+        await client.end();
+    } catch (err) {
         console.error('Erro ao conectar com PostgreSQL:', err);
-    } else {
-        console.log('Conectado ao PostgreSQL:', res.rows[0].now);
     }
-});
+}
 
 // Initialize database
 async function initDatabase() {
     console.log('Iniciando banco de dados PostgreSQL...');
     
     try {
+        const client = await getClient();
+        
         // Users table
-        await pool.query(`
+        await client.query(`
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
                 username VARCHAR(255) UNIQUE NOT NULL,
@@ -47,7 +57,7 @@ async function initDatabase() {
         console.log('Tabela users criada/verificada com sucesso');
 
         // System config table
-        await pool.query(`
+        await client.query(`
             CREATE TABLE IF NOT EXISTS system_config (
                 id SERIAL PRIMARY KEY,
                 key_name VARCHAR(255) UNIQUE NOT NULL,
@@ -58,18 +68,20 @@ async function initDatabase() {
         console.log('Tabela system_config criada/verificada com sucesso');
         
         // Insert system key if not exists
-        const systemKeyResult = await pool.query("SELECT key_value FROM system_config WHERE key_name = 'system_key'");
+        const systemKeyResult = await client.query("SELECT key_value FROM system_config WHERE key_name = 'system_key'");
         
         if (systemKeyResult.rows.length === 0) {
             const systemKey = uuidv4();
             console.log('Criando nova System Key:', systemKey);
             
-            await pool.query("INSERT INTO system_config (key_name, key_value) VALUES ($1, $2)", 
+            await client.query("INSERT INTO system_config (key_name, key_value) VALUES ($1, $2)", 
                 ['system_key', systemKey]);
             console.log('System Key criada com sucesso:', systemKey);
         } else {
             console.log('System Key já existe:', systemKeyResult.rows[0].key_value);
         }
+        
+        await client.end();
         
     } catch (error) {
         console.error('Erro ao inicializar banco:', error);
@@ -79,20 +91,30 @@ async function initDatabase() {
 // API Routes
 
 // Health check
-app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', message: 'Sistema funcionando' });
+app.get('/api/health', async (req, res) => {
+    try {
+        const client = await getClient();
+        const result = await client.query('SELECT NOW()');
+        res.json({ status: 'ok', message: 'Sistema funcionando', db_status: 'connected', db_time: result.rows[0].now });
+        await client.end();
+    } catch (err) {
+        console.error('Erro ao buscar health check:', err);
+        res.status(500).json({ status: 'error', message: 'Erro interno do servidor' });
+    }
 });
 
 // Get system key
 app.get('/api/system/key', async (req, res) => {
     try {
-        const result = await pool.query("SELECT key_value FROM system_config WHERE key_name = 'system_key'");
+        const client = await getClient();
+        const result = await client.query("SELECT key_value FROM system_config WHERE key_name = 'system_key'");
         
         if (result.rows.length === 0) {
             res.status(404).json({ error: 'System key não encontrada' });
         } else {
             res.json({ system_key: result.rows[0].key_value });
         }
+        await client.end();
     } catch (err) {
         console.error('Erro ao buscar system key:', err);
         res.status(500).json({ error: 'Erro interno do servidor' });
@@ -102,13 +124,15 @@ app.get('/api/system/key', async (req, res) => {
 // Dashboard stats
 app.get('/api/dashboard', async (req, res) => {
     try {
-        const userResult = await pool.query("SELECT COUNT(*) as total_users FROM users");
-        const requestResult = await pool.query("SELECT COALESCE(SUM(requests_used), 0) as total_requests FROM users");
+        const client = await getClient();
+        const userResult = await client.query("SELECT COUNT(*) as total_users FROM users");
+        const requestResult = await client.query("SELECT COALESCE(SUM(requests_used), 0) as total_requests FROM users");
         
         res.json({
             total_users: parseInt(userResult.rows[0].total_users) || 0,
             total_requests: parseInt(requestResult.rows[0].total_requests) || 0
         });
+        await client.end();
     } catch (err) {
         console.error('Erro ao buscar dashboard:', err);
         res.status(500).json({ error: 'Erro interno do servidor' });
@@ -118,8 +142,10 @@ app.get('/api/dashboard', async (req, res) => {
 // List users (for admin panel)
 app.get('/api/users', async (req, res) => {
     try {
-        const result = await pool.query("SELECT id, username, email, private_key, monthly_limit, requests_used, created_at FROM users ORDER BY created_at DESC");
+        const client = await getClient();
+        const result = await client.query("SELECT id, username, email, private_key, monthly_limit, requests_used, created_at FROM users ORDER BY created_at DESC");
         res.json(result.rows);
+        await client.end();
     } catch (err) {
         console.error('Erro ao listar usuários:', err);
         res.status(500).json({ error: 'Erro interno do servidor' });
@@ -141,7 +167,8 @@ app.post('/api/users/register', async (req, res) => {
         console.log('Verificando system key...');
         
         // Verify system key
-        const systemKeyResult = await pool.query("SELECT key_value FROM system_config WHERE key_name = 'system_key'");
+        const client = await getClient();
+        const systemKeyResult = await client.query("SELECT key_value FROM system_config WHERE key_name = 'system_key'");
         
         if (systemKeyResult.rows.length === 0) {
             console.log('System key não encontrada');
@@ -165,7 +192,7 @@ app.post('/api/users/register', async (req, res) => {
         
         console.log('Executando query:', query, 'com params:', params);
         
-        const result = await pool.query(query, params);
+        const result = await client.query(query, params);
         
         console.log('Usuário criado com sucesso. ID:', result.rows[0].id);
         res.json({
@@ -193,7 +220,8 @@ app.post('/api/validate-token', async (req, res) => {
     }
 
     try {
-        const userResult = await pool.query("SELECT id, username, monthly_limit, requests_used FROM users WHERE private_key = $1", [user_token]);
+        const client = await getClient();
+        const userResult = await client.query("SELECT id, username, monthly_limit, requests_used FROM users WHERE private_key = $1", [user_token]);
         
         if (userResult.rows.length === 0) {
             return res.status(401).json({ error: 'Token inválido' });
@@ -202,7 +230,7 @@ app.post('/api/validate-token', async (req, res) => {
         const user = userResult.rows[0];
         
         // Get system key
-        const systemResult = await pool.query("SELECT key_value FROM system_config WHERE key_name = 'system_key'");
+        const systemResult = await client.query("SELECT key_value FROM system_config WHERE key_name = 'system_key'");
         const systemKey = systemResult.rows[0].key_value;
 
         const remainingRequests = user.monthly_limit - user.requests_used;
@@ -233,7 +261,8 @@ app.post('/api/consume-request', async (req, res) => {
     }
 
     try {
-        const userResult = await pool.query("SELECT id, username, monthly_limit, requests_used FROM users WHERE private_key = $1", [user_token]);
+        const client = await getClient();
+        const userResult = await client.query("SELECT id, username, monthly_limit, requests_used FROM users WHERE private_key = $1", [user_token]);
         
         if (userResult.rows.length === 0) {
             return res.status(401).json({ error: 'Token inválido' });
@@ -252,7 +281,7 @@ app.post('/api/consume-request', async (req, res) => {
         }
 
         // Update requests_used
-        await pool.query("UPDATE users SET requests_used = requests_used + 1 WHERE id = $1", [user.id]);
+        await client.query("UPDATE users SET requests_used = requests_used + 1 WHERE id = $1", [user.id]);
 
         res.json({
             success: true,
@@ -271,32 +300,41 @@ app.post('/api/consume-request', async (req, res) => {
 });
 
 // Start server
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`Servidor rodando na porta ${PORT}`);
-    initDatabase();
+    await testConnection();
+    await initDatabase();
 });
 
 // Graceful shutdown
 process.on('SIGINT', () => {
     console.log('\nEncerrando servidor...');
-    pool.end((err) => {
-        if (err) {
-            console.error('Erro ao fechar conexão PostgreSQL:', err);
-        } else {
-            console.log('Conexão PostgreSQL fechada com sucesso');
-        }
-        process.exit(0);
-    });
+    // No need to close pool here, as each request uses a new client.
+    // If you had a global pool, you would do:
+    // if (global.pool) {
+    //     global.pool.end((err) => {
+    //         if (err) {
+    //             console.error('Erro ao fechar conexão PostgreSQL:', err);
+    //         } else {
+    //             console.log('Conexão PostgreSQL fechada com sucesso');
+    //         }
+    //     });
+    // }
+    process.exit(0);
 });
 
 process.on('SIGTERM', () => {
     console.log('\nEncerrando servidor...');
-    pool.end((err) => {
-        if (err) {
-            console.error('Erro ao fechar conexão PostgreSQL:', err);
-        } else {
-            console.log('Conexão PostgreSQL fechada com sucesso');
-        }
-        process.exit(0);
-    });
+    // No need to close pool here, as each request uses a new client.
+    // If you had a global pool, you would do:
+    // if (global.pool) {
+    //     global.pool.end((err) => {
+    //         if (err) {
+    //             console.error('Erro ao fechar conexão PostgreSQL:', err);
+    //         } else {
+    //             console.log('Conexão PostgreSQL fechada com sucesso');
+    //         }
+    //     });
+    // }
+    process.exit(0);
 });
