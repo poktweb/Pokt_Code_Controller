@@ -8,7 +8,7 @@ const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(express.json());
-app.use(express.static('public'));
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Database connection function
 async function getClient() {
@@ -89,6 +89,11 @@ async function initDatabase() {
 }
 
 // API Routes
+
+// Root route - serve the main page
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 // Health check
 app.get('/api/health', async (req, res) => {

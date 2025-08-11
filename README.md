@@ -14,7 +14,8 @@ Sistema simplificado de controle para validação de tokens e consumo de requisi
 O projeto já está configurado para funcionar no Vercel com:
 - ✅ **vercel.json** configurado
 - ✅ **Conexões PostgreSQL** otimizadas para serverless
-- ✅ **Timeout** configurado para 30 segundos
+- ✅ **Rota raiz** configurada para servir o dashboard
+- ✅ **Arquivos estáticos** configurados corretamente
 
 ### **Deploy:**
 1. **Instalar Vercel CLI:**
@@ -37,6 +38,14 @@ O projeto já está configurado para funcionar no Vercel com:
 - **Conexões fechadas**: `client.end()` após cada operação
 - **Sem estado persistente**: Ideal para funções serverless
 - **SSL configurado**: Compatível com Neon PostgreSQL
+- **Rota raiz configurada**: `/` serve o dashboard automaticamente
+- **Arquivos estáticos**: CSS e JS servidos corretamente
+
+### **Estrutura de Rotas no Vercel:**
+- **`/`** → Dashboard principal
+- **`/api/*`** → APIs do sistema
+- **`/styles.css`** → Arquivo de estilos
+- **`/script.js`** → JavaScript do frontend
 
 ## 🚀 **Instalação**
 
