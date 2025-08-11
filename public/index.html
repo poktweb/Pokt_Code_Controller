@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pokt Code Controller</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header>
+        <h1>Pokt Code Controller</h1>
+        <p>Sistema de controle de usuários e tokens</p>
+    </header>
+
+    <nav class="tabs">
+        <button class="tab-button active" data-tab="dashboard">Dashboard</button>
+        <button class="tab-button" data-tab="users">Usuários</button>
+        <button class="tab-button" data-tab="register">Cadastrar Usuário</button>
+    </nav>
+
+    <main>
+        <!-- Dashboard Tab -->
+        <div id="dashboardTab" class="tab-content active">
+            <h2>Dashboard</h2>
+            <div id="dashboardContent">
+                <div class="loading">Carregando...</div>
+            </div>
+        </div>
+
+        <!-- Users Tab -->
+        <div id="usersTab" class="tab-content">
+            <h2>Usuários Cadastrados</h2>
+            <div id="usersContent">
+                <div class="loading">Carregando...</div>
+            </div>
+        </div>
+
+        <!-- Register Tab -->
+        <div id="registerTab" class="tab-content">
+            <h2>Cadastrar Novo Usuário</h2>
+            
+            <div class="system-key-info">
+                <h3>System Key Atual</h3>
+                <div class="key-display">
+                    <input type="text" id="currentSystemKey" readonly>
+                    <button type="button" class="btn btn-secondary" onclick="copyToClipboard('currentSystemKey')">Copiar</button>
+                </div>
+            </div>
+
+            <form id="registerForm" class="form">
+                <div class="form-group">
+                    <label for="username">Nome de Usuário:</label>
+                    <input type="text" id="username" name="username" required>
+                </div>
+                <div class="form-group">
+                    <label for="email">Email:</label>
+                    <input type="email" id="email" name="email" required>
+                </div>
+                <div class="form-group">
+                    <label for="monthlyLimit">Limite Mensal:</label>
+                    <input type="number" id="monthlyLimit" name="monthlyLimit" value="1000" min="1" required>
+                </div>
+                <button type="submit" class="btn btn-primary">Cadastrar Usuário</button>
+            </form>
+        </div>
+    </main>
+
+    <script src="script.js"></script>
+</body>
+</html>
