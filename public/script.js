@@ -5,6 +5,17 @@ let currentTab = 'dashboard';
 // Initialize application
 document.addEventListener('DOMContentLoaded', function() {
     console.log('Inicializando aplicação...');
+    
+    // Check if user is logged in
+    if (localStorage.getItem('isLoggedIn') !== 'true') {
+        window.location.href = '/login.html';
+        return;
+    }
+    
+    // Set current user
+    const currentUser = localStorage.getItem('username') || 'Admin';
+    document.getElementById('currentUser').textContent = currentUser;
+    
     initializeTabs();
     loadSystemKey();
     loadDashboard();
@@ -27,6 +38,13 @@ document.addEventListener('DOMContentLoaded', function() {
     const editForm = document.getElementById('editUserForm');
     if (editForm) { editForm.addEventListener('submit', updateUserLimit); }
 });
+
+// Logout function
+function logout() {
+    localStorage.removeItem('isLoggedIn');
+    localStorage.removeItem('username');
+    window.location.href = '/login.html';
+}
 
 // Tab management
 function initializeTabs() {
@@ -144,7 +162,7 @@ function displayUsers(users) {
                     <p><strong>Criado em:</strong> ${new Date(user.created_at).toLocaleDateString('pt-BR')}</p>
                 </div>
                 <div class="user-actions">
-                    <button class="btn btn-secondary" onclick="editUser(${user.id}, '${user.username}', '${user.email}', '${user.private_key}', ${user.monthly_limit})">Editar</button>
+                    <button class="btn btn-secondary" onclick="editUser(${user.id}, '${user.username}', '${user.email}', '${user.private_key}', ${user.monthly_limit}, ${user.requests_used})">Editar</button>
                     <button class="btn btn-danger" onclick="deleteUser(${user.id})">Deletar</button>
                 </div>
             </div>
@@ -253,12 +271,13 @@ function showNotification(message, type = 'info') {
 }
 
 // Edit user
-function editUser(userId, username, email, privateKey, monthlyLimit) {
+function editUser(userId, username, email, privateKey, monthlyLimit, requestsUsed) {
     document.getElementById('editUserId').value = userId;
     document.getElementById('editUsername').value = username;
     document.getElementById('editEmail').value = email;
     document.getElementById('editPrivateKey').value = privateKey;
     document.getElementById('editMonthlyLimit').value = monthlyLimit;
+    document.getElementById('editRequestsUsed').value = requestsUsed;
     document.getElementById('editUserModal').style.display = 'block';
 }
 
@@ -267,26 +286,33 @@ async function updateUserLimit(event) {
     event.preventDefault();
     const userId = document.getElementById('editUserId').value;
     const monthlyLimit = document.getElementById('editMonthlyLimit').value;
+    const requestsUsed = document.getElementById('editRequestsUsed').value;
     
-    if (!monthlyLimit) {
-        showNotification('Preencha o limite mensal', 'warning');
+    if (!monthlyLimit || !requestsUsed) {
+        showNotification('Preencha todos os campos obrigatórios', 'warning');
+        return;
+    }
+    
+    if (parseInt(requestsUsed) > parseInt(monthlyLimit)) {
+        showNotification('Requisições usadas não podem ser maiores que o limite mensal', 'warning');
         return;
     }
     
     try {
-        const response = await fetch(`/api/users/${userId}/limit`, {
+        const response = await fetch(`/api/users/${userId}/update`, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
                 monthly_limit: parseInt(monthlyLimit),
+                requests_used: parseInt(requestsUsed),
                 system_key: currentSystemKey
             })
         });
         
         if (response.ok) {
-            showNotification('Limite mensal atualizado com sucesso!', 'success');
+            showNotification('Usuário atualizado com sucesso!', 'success');
             document.getElementById('editUserModal').style.display = 'none';
             loadUsers();
             loadDashboard();

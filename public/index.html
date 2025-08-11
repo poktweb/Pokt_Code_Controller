@@ -8,8 +8,16 @@
 </head>
 <body>
     <header>
-        <h1>Pokt Code Controller</h1>
-        <p>Sistema de controle de usuários e tokens</p>
+        <div class="header-content">
+            <div class="header-info">
+                <h1>Pokt Code Controller</h1>
+                <p>Sistema de controle de usuários e tokens</p>
+            </div>
+            <div class="header-actions">
+                <span class="user-info">Bem-vindo, <span id="currentUser">Admin</span></span>
+                <button class="logout-btn" onclick="logout()">Sair</button>
+            </div>
+        </div>
     </header>
 
     <nav class="tabs">
@@ -88,6 +96,11 @@
                 <div class="form-group">
                     <label for="editMonthlyLimit">Limite Mensal:</label>
                     <input type="number" id="editMonthlyLimit" min="1" required>
+                </div>
+                <div class="form-group">
+                    <label for="editRequestsUsed">Requisições Usadas:</label>
+                    <input type="number" id="editRequestsUsed" min="0" required>
+                    <small>Altere este valor para ajustar as requisições restantes</small>
                 </div>
                 <button type="submit" class="btn btn-primary">Salvar Alterações</button>
             </form>

@@ -1,6 +1,6 @@
 const express = require('express');
 const { Client } = require('pg');
-const { v4: uuidv4 } = require('uuid');
+const bcrypt = require('bcrypt');
 const path = require('path');
 
 const app = express();
@@ -18,9 +18,70 @@ async function getClient() {
             rejectUnauthorized: false
         }
     });
-    
     await client.connect();
     return client;
+}
+
+// Initialize database
+async function initDatabase() {
+    try {
+        const client = await getClient();
+        
+        // Create users table
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                username VARCHAR(100) UNIQUE NOT NULL,
+                email VARCHAR(255) UNIQUE NOT NULL,
+                private_key VARCHAR(255) UNIQUE NOT NULL,
+                monthly_limit INTEGER DEFAULT 1000,
+                requests_used INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        
+        // Create system_config table
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS system_config (
+                id SERIAL PRIMARY KEY,
+                key_name VARCHAR(100) UNIQUE NOT NULL,
+                key_value TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        
+        // Create admin_users table for login
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS admin_users (
+                id SERIAL PRIMARY KEY,
+                username VARCHAR(100) UNIQUE NOT NULL,
+                password_hash VARCHAR(255) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        
+        // Insert system key if not exists
+        const systemKeyResult = await client.query("SELECT key_value FROM system_config WHERE key_name = 'system_key'");
+        if (systemKeyResult.rows.length === 0) {
+            const systemKey = require('crypto').randomUUID();
+            await client.query("INSERT INTO system_config (key_name, key_value) VALUES ($1, $2)", ['system_key', systemKey]);
+            console.log('System key criada:', systemKey);
+        }
+        
+        // Insert admin user if not exists
+        const adminResult = await client.query("SELECT username FROM admin_users WHERE username = 'poktweb'");
+        if (adminResult.rows.length === 0) {
+            const passwordHash = await bcrypt.hash('84005787', 10);
+            await client.query("INSERT INTO admin_users (username, password_hash) VALUES ($1, $2)", ['poktweb', passwordHash]);
+            console.log('Usuário admin criado: poktweb');
+        }
+        
+        await client.end();
+        console.log('Database inicializado com sucesso!');
+        
+    } catch (err) {
+        console.error('Erro ao inicializar database:', err);
+    }
 }
 
 // Test database connection
@@ -35,64 +96,16 @@ async function testConnection() {
     }
 }
 
-// Initialize database
-async function initDatabase() {
-    console.log('Iniciando banco de dados PostgreSQL...');
-    
-    try {
-        const client = await getClient();
-        
-        // Users table
-        await client.query(`
-            CREATE TABLE IF NOT EXISTS users (
-                id SERIAL PRIMARY KEY,
-                username VARCHAR(255) UNIQUE NOT NULL,
-                email VARCHAR(255) UNIQUE NOT NULL,
-                private_key VARCHAR(255) UNIQUE NOT NULL,
-                monthly_limit INTEGER DEFAULT 1000,
-                requests_used INTEGER DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        `);
-        console.log('Tabela users criada/verificada com sucesso');
-
-        // System config table
-        await client.query(`
-            CREATE TABLE IF NOT EXISTS system_config (
-                id SERIAL PRIMARY KEY,
-                key_name VARCHAR(255) UNIQUE NOT NULL,
-                key_value VARCHAR(255) NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        `);
-        console.log('Tabela system_config criada/verificada com sucesso');
-        
-        // Insert system key if not exists
-        const systemKeyResult = await client.query("SELECT key_value FROM system_config WHERE key_name = 'system_key'");
-        
-        if (systemKeyResult.rows.length === 0) {
-            const systemKey = uuidv4();
-            console.log('Criando nova System Key:', systemKey);
-            
-            await client.query("INSERT INTO system_config (key_name, key_value) VALUES ($1, $2)", 
-                ['system_key', systemKey]);
-            console.log('System Key criada com sucesso:', systemKey);
-        } else {
-            console.log('System Key já existe:', systemKeyResult.rows[0].key_value);
-        }
-        
-        await client.end();
-        
-    } catch (error) {
-        console.error('Erro ao inicializar banco:', error);
-    }
-}
-
 // API Routes
 
 // Root route - serve the main page
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Login route
+app.get('/login', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 
 // Health check
@@ -189,7 +202,7 @@ app.post('/api/users/register', async (req, res) => {
         }
 
         console.log('System key válida, criando usuário...');
-        const privateKey = uuidv4();
+        const privateKey = require('crypto').randomUUID();
         
         // Query simplificada
         const query = "INSERT INTO users (username, email, private_key, monthly_limit) VALUES ($1, $2, $3, $4) RETURNING id";
@@ -323,16 +336,67 @@ app.put('/api/users/:id/limit', async (req, res) => {
         const systemKeyResult = await client.query("SELECT key_value FROM system_config WHERE key_name = 'system_key'");
         
         if (systemKeyResult.rows.length === 0 || systemKeyResult.rows[0].key_value !== system_key) {
+            await client.end();
             return res.status(401).json({ error: 'System key inválida' });
         }
 
         const result = await client.query("UPDATE users SET monthly_limit = $1 WHERE id = $2 RETURNING id", [monthly_limit, id]);
+        await client.end();
         
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Usuário não encontrado' });
         }
 
         res.json({ message: 'Limite mensal atualizado com sucesso', monthly_limit });
+        
+    } catch (err) {
+        console.error('Erro ao atualizar usuário:', err);
+        res.status(500).json({ error: 'Erro interno do servidor' });
+    }
+});
+
+// Update user (limit and requests)
+app.put('/api/users/:id/update', async (req, res) => {
+    const { id } = req.params;
+    const { monthly_limit, requests_used, system_key } = req.body;
+
+    if (!monthly_limit || !requests_used || !system_key) {
+        return res.status(400).json({ error: 'Todos os campos são obrigatórios' });
+    }
+
+    if (monthly_limit < 1) {
+        return res.status(400).json({ error: 'Limite mensal deve ser maior que 0' });
+    }
+
+    if (requests_used < 0) {
+        return res.status(400).json({ error: 'Requisições usadas não podem ser negativas' });
+    }
+
+    if (requests_used > monthly_limit) {
+        return res.status(400).json({ error: 'Requisições usadas não podem ser maiores que o limite mensal' });
+    }
+
+    try {
+        // Verify system key
+        const client = await getClient();
+        const systemKeyResult = await client.query("SELECT key_value FROM system_config WHERE key_name = 'system_key'");
+        
+        if (systemKeyResult.rows.length === 0 || systemKeyResult.rows[0].key_value !== system_key) {
+            await client.end();
+            return res.status(401).json({ error: 'System key inválida' });
+        }
+
+        const result = await client.query(
+            "UPDATE users SET monthly_limit = $1, requests_used = $2 WHERE id = $3 RETURNING id", 
+            [monthly_limit, requests_used, id]
+        );
+        await client.end();
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Usuário não encontrado' });
+        }
+
+        res.json({ message: 'Usuário atualizado com sucesso', monthly_limit, requests_used });
         
     } catch (err) {
         console.error('Erro ao atualizar usuário:', err);
@@ -355,10 +419,12 @@ app.delete('/api/users/:id', async (req, res) => {
         const systemKeyResult = await client.query("SELECT key_value FROM system_config WHERE key_name = 'system_key'");
         
         if (systemKeyResult.rows.length === 0 || systemKeyResult.rows[0].key_value !== system_key) {
+            await client.end();
             return res.status(401).json({ error: 'System key inválida' });
         }
 
         const result = await client.query("DELETE FROM users WHERE id = $1 RETURNING id", [id]);
+        await client.end();
         
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Usuário não encontrado' });
@@ -368,6 +434,45 @@ app.delete('/api/users/:id', async (req, res) => {
         
     } catch (err) {
         console.error('Erro ao deletar usuário:', err);
+        res.status(500).json({ error: 'Erro interno do servidor' });
+    }
+});
+
+// Login API
+app.post('/api/auth/login', async (req, res) => {
+    const { username, password } = req.body;
+
+    if (!username || !password) {
+        return res.status(400).json({ error: 'Usuário e senha são obrigatórios' });
+    }
+
+    try {
+        const client = await getClient();
+        const result = await client.query(
+            "SELECT username, password_hash FROM admin_users WHERE username = $1",
+            [username]
+        );
+        await client.end();
+
+        if (result.rows.length === 0) {
+            return res.status(401).json({ error: 'Usuário ou senha inválidos' });
+        }
+
+        const user = result.rows[0];
+        const isValidPassword = await bcrypt.compare(password, user.password_hash);
+
+        if (!isValidPassword) {
+            return res.status(401).json({ error: 'Usuário ou senha inválidos' });
+        }
+
+        res.json({ 
+            success: true, 
+            message: 'Login realizado com sucesso',
+            username: user.username
+        });
+
+    } catch (err) {
+        console.error('Erro no login:', err);
         res.status(500).json({ error: 'Erro interno do servidor' });
     }
 });

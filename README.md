@@ -7,8 +7,9 @@ Sistema simplificado de controle para validação de tokens e consumo de requisi
 - **Validar Token**: Verifica se o token do usuário é válido e retorna informações
 - **Consumir Requisição**: Desconta 1 requisição do limite mensal do usuário
 - **Painel Admin**: Interface para cadastrar usuários e monitorar uso
-- **Editar Usuários**: Modificar limite mensal de requisições
+- **Editar Usuários**: Modificar limite mensal e requisições usadas
 - **Deletar Usuários**: Remover usuários do sistema
+- **Sistema de Login**: Autenticação segura com usuário `poktweb`
 
 ## 🌐 **Deploy no Vercel**
 
@@ -272,14 +273,33 @@ except Exception as e:
 | POST | `/api/consume-request` | **Consumir requisição** | ❌ |
 | POST | `/api/users/register` | Cadastrar usuário | ✅ System Key |
 | PUT | `/api/users/:id/limit` | Atualizar limite mensal | ✅ System Key |
+| PUT | `/api/users/:id/update` | Atualizar usuário completo | ✅ System Key |
 | DELETE | `/api/users/:id` | Deletar usuário | ✅ System Key |
+| POST | `/api/auth/login` | Login administrativo | ❌ |
+
+## 🔐 **Sistema de Login**
+
+### **Credenciais Padrão:**
+- **Usuário:** `poktweb`
+- **Senha:** `84005787`
+
+### **Como Funciona:**
+1. **Acesso inicial** redireciona para `/login.html`
+2. **Autenticação** com bcrypt para segurança
+3. **Sessão** mantida via localStorage
+4. **Logout** limpa dados e redireciona para login
+
+### **Segurança:**
+- Senhas **hasheadas** com bcrypt (salt rounds: 10)
+- **Verificação de sessão** em todas as páginas
+- **Redirecionamento automático** para login se não autenticado
 
 ## 🏗️ **Tecnologias**
 
 - **Backend**: Node.js + Express
-- **Database**: SQLite
+- **Database**: PostgreSQL (Neon)
 - **Frontend**: HTML + CSS + JavaScript
-- **Autenticação**: System Key + Tokens privados
+- **Autenticação**: System Key + Tokens privados + bcrypt
 
 ## 📁 **Estrutura do Projeto**
 
@@ -287,9 +307,11 @@ except Exception as e:
 ├── server.js          # Servidor principal
 ├── public/            # Arquivos frontend
 │   ├── index.html     # Interface administrativa
+│   ├── login.html     # Página de login
 │   ├── script.js      # Lógica JavaScript
+│   ├── login.js       # Lógica de login
 │   └── styles.css     # Estilos CSS
-├── database.db        # Banco SQLite
+├── vercel.json        # Configuração Vercel
 └── package.json       # Dependências
 ```
 
