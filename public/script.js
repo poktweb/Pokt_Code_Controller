@@ -8,7 +8,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Check if user is logged in
     if (localStorage.getItem('isLoggedIn') !== 'true') {
-        window.location.href = '/login.html';
+        window.location.href = '/login';
         return;
     }
     
@@ -43,7 +43,7 @@ document.addEventListener('DOMContentLoaded', function() {
 function logout() {
     localStorage.removeItem('isLoggedIn');
     localStorage.removeItem('username');
-    window.location.href = '/login.html';
+    window.location.href = '/login';
 }
 
 // Tab management

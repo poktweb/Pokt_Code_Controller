@@ -98,8 +98,13 @@ async function testConnection() {
 
 // API Routes
 
-// Root route - serve the main page
+// Root route - redirect to login
 app.get('/', (req, res) => {
+    res.redirect('/login');
+});
+
+// Dashboard route - serve the main page
+app.get('/dashboard', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 

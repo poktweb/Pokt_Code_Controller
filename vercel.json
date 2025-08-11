@@ -16,6 +16,10 @@
       "dest": "/server.js"
     },
     {
+      "src": "/dashboard",
+      "dest": "/server.js"
+    },
+    {
       "src": "/",
       "dest": "/server.js"
     },

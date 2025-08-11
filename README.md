@@ -45,7 +45,9 @@ O projeto já está configurado para funcionar no Vercel com:
 - **Arquivos estáticos**: CSS e JS servidos corretamente
 
 ### **Estrutura de Rotas no Vercel:**
-- **`/`** → Dashboard principal
+- **`/`** → Redireciona para `/login`
+- **`/login`** → Página de login
+- **`/dashboard`** → Dashboard principal (requer autenticação)
 - **`/api/*`** → APIs do sistema
 - **`/styles.css`** → Arquivo de estilos
 - **`/script.js`** → JavaScript do frontend
@@ -64,7 +66,7 @@ O projeto já está configurado para funcionar no Vercel com:
 
 3. **Acessar interface:**
    ```
-   http://localhost:3000
+   http://localhost:3000/login
    ```
 
 ## 🔑 **APIs Principais**
@@ -253,8 +255,14 @@ except Exception as e:
 - **`GET /api/health`** - Status do servidor
 - **`GET /api/system/key`** - Obter System Key atual
 
-## 🔄 **Fluxo de Uso**
+## �� **Fluxo de Uso**
 
+### **Para Administradores:**
+1. **Acessar** `http://localhost:3000/login`
+2. **Fazer login** com `poktweb` / `84005787`
+3. **Acessar dashboard** para gerenciar usuários
+
+### **Para Seu Sistema:**
 1. **Seu sistema recebe** o token do usuário
 2. **Valida o token** via `/api/validate-token`
 3. **Recebe a System Key** e informações do usuário

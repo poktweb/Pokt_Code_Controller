@@ -4,7 +4,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Check if user is already logged in
     if (localStorage.getItem('isLoggedIn') === 'true') {
-        window.location.href = '/';
+        window.location.href = '/dashboard';
         return;
     }
     
@@ -38,7 +38,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 // Redirect to dashboard
                 setTimeout(() => {
-                    window.location.href = '/';
+                    window.location.href = '/dashboard';
                 }, 1000);
             } else {
                 showMessage(data.error || 'Erro no login', 'error');
