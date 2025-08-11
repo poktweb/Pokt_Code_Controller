@@ -1,5 +1,5 @@
 const express = require('express');
-const sqlite3 = require('sqlite3').verbose();
+const { Pool } = require('pg');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 
@@ -10,66 +10,70 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(express.static('public'));
 
-// Database
-const db = new sqlite3.Database('database.db');
+// PostgreSQL connection
+const pool = new Pool({
+    connectionString: 'postgresql://neondb_owner:npg_o4jREmlL7zpQ@ep-purple-flower-aejbb9ba-pooler.c-2.us-east-2.aws.neon.tech/Pokt_Code?sslmode=require&channel_binding=require',
+    ssl: {
+        rejectUnauthorized: false
+    }
+});
+
+// Test database connection
+pool.query('SELECT NOW()', (err, res) => {
+    if (err) {
+        console.error('Erro ao conectar com PostgreSQL:', err);
+    } else {
+        console.log('Conectado ao PostgreSQL:', res.rows[0].now);
+    }
+});
 
 // Initialize database
-function initDatabase() {
-    console.log('Iniciando banco de dados...');
+async function initDatabase() {
+    console.log('Iniciando banco de dados PostgreSQL...');
     
-    db.serialize(() => {
+    try {
         // Users table
-        db.run(`CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            email TEXT UNIQUE NOT NULL,
-            private_key TEXT UNIQUE NOT NULL,
-            monthly_limit INTEGER DEFAULT 1000,
-            requests_used INTEGER DEFAULT 0,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )`, (err) => {
-            if (err) {
-                console.error('Erro ao criar tabela users:', err);
-            } else {
-                console.log('Tabela users criada/verificada com sucesso');
-            }
-        });
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                username VARCHAR(255) UNIQUE NOT NULL,
+                email VARCHAR(255) UNIQUE NOT NULL,
+                private_key VARCHAR(255) UNIQUE NOT NULL,
+                monthly_limit INTEGER DEFAULT 1000,
+                requests_used INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        console.log('Tabela users criada/verificada com sucesso');
 
         // System config table
-        db.run(`CREATE TABLE IF NOT EXISTS system_config (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            key_name TEXT UNIQUE NOT NULL,
-            key_value TEXT NOT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )`, (err) => {
-            if (err) {
-                console.error('Erro ao criar tabela system_config:', err);
-            } else {
-                console.log('Tabela system_config criada/verificada com sucesso');
-                
-                // Insert system key if not exists
-                db.get("SELECT key_value FROM system_config WHERE key_name = 'system_key'", (err, row) => {
-                    if (err) {
-                        console.error('Erro ao verificar system key:', err);
-                    } else if (!row) {
-                        const systemKey = uuidv4();
-                        console.log('Criando nova System Key:', systemKey);
-                        
-                        db.run("INSERT INTO system_config (key_name, key_value) VALUES (?, ?)", 
-                            ['system_key', systemKey], (err) => {
-                            if (err) {
-                                console.error('Erro ao inserir system key:', err);
-                            } else {
-                                console.log('System Key criada com sucesso:', systemKey);
-                            }
-                        });
-                    } else {
-                        console.log('System Key já existe:', row.key_value);
-                    }
-                });
-            }
-        });
-    });
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS system_config (
+                id SERIAL PRIMARY KEY,
+                key_name VARCHAR(255) UNIQUE NOT NULL,
+                key_value VARCHAR(255) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        console.log('Tabela system_config criada/verificada com sucesso');
+        
+        // Insert system key if not exists
+        const systemKeyResult = await pool.query("SELECT key_value FROM system_config WHERE key_name = 'system_key'");
+        
+        if (systemKeyResult.rows.length === 0) {
+            const systemKey = uuidv4();
+            console.log('Criando nova System Key:', systemKey);
+            
+            await pool.query("INSERT INTO system_config (key_name, key_value) VALUES ($1, $2)", 
+                ['system_key', systemKey]);
+            console.log('System Key criada com sucesso:', systemKey);
+        } else {
+            console.log('System Key já existe:', systemKeyResult.rows[0].key_value);
+        }
+        
+    } catch (error) {
+        console.error('Erro ao inicializar banco:', error);
+    }
 }
 
 // API Routes
@@ -80,53 +84,50 @@ app.get('/api/health', (req, res) => {
 });
 
 // Get system key
-app.get('/api/system/key', (req, res) => {
-    db.get("SELECT key_value FROM system_config WHERE key_name = 'system_key'", (err, row) => {
-        if (err) {
-            res.status(500).json({ error: 'Erro interno do servidor' });
-        } else if (!row) {
+app.get('/api/system/key', async (req, res) => {
+    try {
+        const result = await pool.query("SELECT key_value FROM system_config WHERE key_name = 'system_key'");
+        
+        if (result.rows.length === 0) {
             res.status(404).json({ error: 'System key não encontrada' });
         } else {
-            res.json({ system_key: row.key_value });
+            res.json({ system_key: result.rows[0].key_value });
         }
-    });
+    } catch (err) {
+        console.error('Erro ao buscar system key:', err);
+        res.status(500).json({ error: 'Erro interno do servidor' });
+    }
 });
 
 // Dashboard stats
-app.get('/api/dashboard', (req, res) => {
-    db.get("SELECT COUNT(*) as total_users FROM users", (err, userRow) => {
-        if (err) {
-            res.status(500).json({ error: 'Erro interno do servidor' });
-            return;
-        }
+app.get('/api/dashboard', async (req, res) => {
+    try {
+        const userResult = await pool.query("SELECT COUNT(*) as total_users FROM users");
+        const requestResult = await pool.query("SELECT COALESCE(SUM(requests_used), 0) as total_requests FROM users");
         
-        db.get("SELECT SUM(requests_used) as total_requests FROM users", (err, requestRow) => {
-            if (err) {
-                res.status(500).json({ error: 'Erro interno do servidor' });
-                return;
-            }
-            
-            res.json({
-                total_users: userRow.total_users || 0,
-                total_requests: requestRow.total_requests || 0
-            });
+        res.json({
+            total_users: parseInt(userResult.rows[0].total_users) || 0,
+            total_requests: parseInt(requestResult.rows[0].total_requests) || 0
         });
-    });
+    } catch (err) {
+        console.error('Erro ao buscar dashboard:', err);
+        res.status(500).json({ error: 'Erro interno do servidor' });
+    }
 });
 
 // List users (for admin panel)
-app.get('/api/users', (req, res) => {
-    db.all("SELECT id, username, email, private_key, monthly_limit, requests_used, created_at FROM users ORDER BY created_at DESC", (err, rows) => {
-        if (err) {
-            res.status(500).json({ error: 'Erro interno do servidor' });
-        } else {
-            res.json(rows);
-        }
-    });
+app.get('/api/users', async (req, res) => {
+    try {
+        const result = await pool.query("SELECT id, username, email, private_key, monthly_limit, requests_used, created_at FROM users ORDER BY created_at DESC");
+        res.json(result.rows);
+    } catch (err) {
+        console.error('Erro ao listar usuários:', err);
+        res.status(500).json({ error: 'Erro interno do servidor' });
+    }
 });
 
 // Register user (admin only)
-app.post('/api/users/register', (req, res) => {
+app.post('/api/users/register', async (req, res) => {
     console.log('Tentativa de cadastro:', req.body);
     
     const { username, email, system_key, monthly_limit = 1000 } = req.body;
@@ -136,19 +137,22 @@ app.post('/api/users/register', (req, res) => {
         return res.status(400).json({ error: 'Username, email e system_key são obrigatórios' });
     }
 
-    console.log('Verificando system key...');
-    
-    // Verify system key
-    db.get("SELECT key_value FROM system_config WHERE key_name = 'system_key'", (err, row) => {
-        if (err) {
-            console.error('Erro ao verificar system key:', err);
-            return res.status(500).json({ error: 'Erro interno do servidor' });
+    try {
+        console.log('Verificando system key...');
+        
+        // Verify system key
+        const systemKeyResult = await pool.query("SELECT key_value FROM system_config WHERE key_name = 'system_key'");
+        
+        if (systemKeyResult.rows.length === 0) {
+            console.log('System key não encontrada');
+            return res.status(401).json({ error: 'System key inválida' });
         }
         
-        console.log('System key encontrada:', row ? row.key_value : 'não encontrada');
+        const systemKey = systemKeyResult.rows[0].key_value;
+        console.log('System key encontrada:', systemKey);
         
-        if (!row || row.key_value !== system_key) {
-            console.log('System key inválida. Recebida:', system_key, 'Esperada:', row ? row.key_value : 'não encontrada');
+        if (systemKey !== system_key) {
+            console.log('System key inválida. Recebida:', system_key, 'Esperada:', systemKey);
             return res.status(401).json({ error: 'System key inválida' });
         }
 
@@ -156,87 +160,86 @@ app.post('/api/users/register', (req, res) => {
         const privateKey = uuidv4();
         
         // Query simplificada
-        const query = "INSERT INTO users (username, email, private_key, monthly_limit) VALUES (?, ?, ?, ?)";
+        const query = "INSERT INTO users (username, email, private_key, monthly_limit) VALUES ($1, $2, $3, $4) RETURNING id";
         const params = [username, email, privateKey, monthly_limit];
         
         console.log('Executando query:', query, 'com params:', params);
         
-        db.run(query, params, function(err) {
-            if (err) {
-                console.error('Erro ao inserir usuário:', err);
-                if (err.message.includes('UNIQUE constraint failed')) {
-                    res.status(400).json({ error: 'Username ou email já existe' });
-                } else {
-                    res.status(500).json({ error: 'Erro interno do servidor' });
-                }
-            } else {
-                console.log('Usuário criado com sucesso. ID:', this.lastID);
-                res.json({
-                    message: 'Usuário criado com sucesso',
-                    user_id: this.lastID,
-                    private_key: privateKey
-                });
-            }
+        const result = await pool.query(query, params);
+        
+        console.log('Usuário criado com sucesso. ID:', result.rows[0].id);
+        res.json({
+            message: 'Usuário criado com sucesso',
+            user_id: result.rows[0].id,
+            private_key: privateKey
         });
-    });
+        
+    } catch (err) {
+        console.error('Erro ao cadastrar usuário:', err);
+        if (err.message.includes('duplicate key value violates unique constraint')) {
+            res.status(400).json({ error: 'Username ou email já existe' });
+        } else {
+            res.status(500).json({ error: 'Erro interno do servidor' });
+        }
+    }
 });
 
 // Validate user token
-app.post('/api/validate-token', (req, res) => {
+app.post('/api/validate-token', async (req, res) => {
     const { user_token } = req.body;
     
     if (!user_token) {
         return res.status(400).json({ error: 'Token do usuário é obrigatório' });
     }
 
-    db.get("SELECT id, username, monthly_limit, requests_used FROM users WHERE private_key = ?", [user_token], (err, user) => {
-        if (err) {
-            return res.status(500).json({ error: 'Erro interno do servidor' });
-        }
+    try {
+        const userResult = await pool.query("SELECT id, username, monthly_limit, requests_used FROM users WHERE private_key = $1", [user_token]);
         
-        if (!user) {
+        if (userResult.rows.length === 0) {
             return res.status(401).json({ error: 'Token inválido' });
         }
 
+        const user = userResult.rows[0];
+        
         // Get system key
-        db.get("SELECT key_value FROM system_config WHERE key_name = 'system_key'", (err, systemRow) => {
-            if (err) {
-                return res.status(500).json({ error: 'Erro interno do servidor' });
-            }
+        const systemResult = await pool.query("SELECT key_value FROM system_config WHERE key_name = 'system_key'");
+        const systemKey = systemResult.rows[0].key_value;
 
-            const remainingRequests = user.monthly_limit - user.requests_used;
-            
-            res.json({
-                valid: true,
-                user_id: user.id,
-                username: user.username,
-                monthly_limit: user.monthly_limit,
-                requests_used: user.requests_used,
-                remaining_requests: remainingRequests,
-                system_key: systemRow.key_value,
-                message: 'Token válido'
-            });
+        const remainingRequests = user.monthly_limit - user.requests_used;
+        
+        res.json({
+            valid: true,
+            user_id: user.id,
+            username: user.username,
+            monthly_limit: user.monthly_limit,
+            requests_used: user.requests_used,
+            remaining_requests: remainingRequests,
+            system_key: systemKey,
+            message: 'Token válido'
         });
-    });
+        
+    } catch (err) {
+        console.error('Erro ao validar token:', err);
+        res.status(500).json({ error: 'Erro interno do servidor' });
+    }
 });
 
 // Consume request (deduct 1 from user's limit)
-app.post('/api/consume-request', (req, res) => {
+app.post('/api/consume-request', async (req, res) => {
     const { user_token } = req.body;
     
     if (!user_token) {
         return res.status(400).json({ error: 'Token do usuário é obrigatório' });
     }
 
-    db.get("SELECT id, username, monthly_limit, requests_used FROM users WHERE private_key = ?", [user_token], (err, user) => {
-        if (err) {
-            return res.status(500).json({ error: 'Erro interno do servidor' });
-        }
+    try {
+        const userResult = await pool.query("SELECT id, username, monthly_limit, requests_used FROM users WHERE private_key = $1", [user_token]);
         
-        if (!user) {
+        if (userResult.rows.length === 0) {
             return res.status(401).json({ error: 'Token inválido' });
         }
 
+        const user = userResult.rows[0];
         const remainingRequests = user.monthly_limit - user.requests_used;
         
         if (remainingRequests <= 0) {
@@ -249,22 +252,22 @@ app.post('/api/consume-request', (req, res) => {
         }
 
         // Update requests_used
-        db.run("UPDATE users SET requests_used = requests_used + 1 WHERE id = ?", [user.id], function(err) {
-            if (err) {
-                return res.status(500).json({ error: 'Erro interno do servidor' });
-            }
+        await pool.query("UPDATE users SET requests_used = requests_used + 1 WHERE id = $1", [user.id]);
 
-            res.json({
-                success: true,
-                message: 'Requisição consumida com sucesso',
-                user_id: user.id,
-                username: user.username,
-                monthly_limit: user.monthly_limit,
-                requests_used: user.requests_used + 1,
-                remaining_requests: remainingRequests - 1
-            });
+        res.json({
+            success: true,
+            message: 'Requisição consumida com sucesso',
+            user_id: user.id,
+            username: user.username,
+            monthly_limit: user.monthly_limit,
+            requests_used: user.requests_used + 1,
+            remaining_requests: remainingRequests - 1
         });
-    });
+        
+    } catch (err) {
+        console.error('Erro ao consumir requisição:', err);
+        res.status(500).json({ error: 'Erro interno do servidor' });
+    }
 });
 
 // Start server
@@ -276,11 +279,11 @@ app.listen(PORT, () => {
 // Graceful shutdown
 process.on('SIGINT', () => {
     console.log('\nEncerrando servidor...');
-    db.close((err) => {
+    pool.end((err) => {
         if (err) {
-            console.error('Erro ao fechar banco:', err);
+            console.error('Erro ao fechar conexão PostgreSQL:', err);
         } else {
-            console.log('Banco fechado com sucesso');
+            console.log('Conexão PostgreSQL fechada com sucesso');
         }
         process.exit(0);
     });
@@ -288,11 +291,11 @@ process.on('SIGINT', () => {
 
 process.on('SIGTERM', () => {
     console.log('\nEncerrando servidor...');
-    db.close((err) => {
+    pool.end((err) => {
         if (err) {
-            console.error('Erro ao fechar banco:', err);
+            console.error('Erro ao fechar conexão PostgreSQL:', err);
         } else {
-            console.log('Banco fechado com sucesso');
+            console.log('Conexão PostgreSQL fechada com sucesso');
         }
         process.exit(0);
     });
